@@ -7,9 +7,8 @@
 
 enum { TIER_COUNT = 4, UPGRADE_LIMIT = 4, THRIVE_WEEKS = 3, THRIVE_MOOD = 85 };
 enum { AMENITY_COUNT = 10, STAFF_LIMIT = 16, COHESION_RECOVERY = 3,
-    HIRE_DISRUPTION_MIN = 6, HIRE_DISRUPTION_MAX = 10,
-    MOVE_DISRUPTION_MIN = 18, MOVE_DISRUPTION_MAX = 24,
-    DISRUPTION_LIMIT = (STAFF_LIMIT - 1)*HIRE_DISRUPTION_MAX + (TIER_COUNT - 1)*MOVE_DISRUPTION_MAX };
+    HIRE_DISRUPTION_MIN = 8, HIRE_DISRUPTION_MAX = 12,
+    MOVE_DISRUPTION_MIN = 22, MOVE_DISRUPTION_MAX = 28, QUIT_DISRUPTION = 8 };
 typedef long long Money;
 
 typedef struct {
@@ -19,6 +18,7 @@ typedef struct {
 } Office;
 
 typedef enum { FURNITURE, TECH, AMENITIES, HIRE, MOVE, ACTION_COUNT } Action;
+typedef enum { WEEK_BLOCKED, WEEK_FINISHED, WEEK_TEAMMATE_QUIT } WeekResult;
 
 typedef struct {
     Money cash, last_net;
@@ -48,7 +48,8 @@ Forecast sim_forecast(const Sim *s);
 Money sim_price(const Sim *s, Action action);
 const char *sim_block(const Sim *s, Action action);
 bool sim_buy(Sim *s, Action action);
-bool sim_advance(Sim *s);
+int sim_quit_chance(const Sim *s);
+WeekResult sim_advance(Sim *s);
 int sim_encode(const Sim *s, char *out, size_t size);
 bool sim_decode(const char *text, Sim *out);
 

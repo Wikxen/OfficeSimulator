@@ -4,7 +4,8 @@
 #include <string.h>
 
 static const Money cash_limit = 999999999;
-enum { WEEK_LIMIT = 999999, LEGACY_AMENITY_LIMIT = 4 };
+enum { WEEK_LIMIT = 999999, LEGACY_AMENITY_LIMIT = 4,
+    QUIT_THRESHOLD = 35, QUIT_MIN_CHANCE = 10, QUIT_MAX_CHANCE = 65 };
 static const uint32_t default_seed = UINT32_C(0xe71c8d41);
 
 const Office offices[TIER_COUNT] = {
@@ -81,14 +82,26 @@ const char *sim_block(const Sim *s, Action action)
     return NULL;
 }
 
-static void disrupt(Sim *s, int low, int high)
+static uint32_t roll(Sim *s, uint32_t limit)
 {
     uint32_t next = s->rng;
     next ^= next << 13;
     next ^= next >> 17;
     next ^= next << 5;
     s->rng = next;
-    s->disruption += low + (int)(next % (unsigned)(high - low + 1));
+    return next % limit;
+}
+
+static void disrupt(Sim *s, int low, int high)
+{
+    s->disruption += low + (int)roll(s, (uint32_t)(high - low + 1));
+}
+
+int sim_quit_chance(const Sim *s)
+{
+    if (s->closed || s->staff <= 1 || s->disruption < QUIT_THRESHOLD) return 0;
+    int chance = QUIT_MIN_CHANCE + s->disruption - QUIT_THRESHOLD;
+    return chance < QUIT_MAX_CHANCE ? chance : QUIT_MAX_CHANCE;
 }
 
 bool sim_buy(Sim *s, Action action)
@@ -112,9 +125,9 @@ bool sim_buy(Sim *s, Action action)
     return true;
 }
 
-bool sim_advance(Sim *s)
+WeekResult sim_advance(Sim *s)
 {
-    if (s->closed || s->week == WEEK_LIMIT) return false;
+    if (s->closed || s->week == WEEK_LIMIT) return WEEK_BLOCKED;
     Forecast forecast = sim_forecast(s);
     s->last_net = forecast.net;
     s->cash += forecast.net;
@@ -132,10 +145,18 @@ bool sim_advance(Sim *s)
     } else {
         s->streak = 0;
     }
-    if (!s->closed)
+    int chance = sim_quit_chance(s);
+    bool quit = chance > 0 && roll(s, 100) < (uint32_t)chance;
+    if (!s->closed) {
         s->disruption = s->disruption > COHESION_RECOVERY ? s->disruption - COHESION_RECOVERY : 0;
+        if (quit) {
+            --s->staff;
+            s->disruption += QUIT_DISRUPTION;
+            s->streak = 0;
+        }
+    }
     ++s->week;
-    return true;
+    return quit ? WEEK_TEAMMATE_QUIT : WEEK_FINISHED;
 }
 
 int sim_encode(const Sim *s, char *out, size_t size)
@@ -164,7 +185,7 @@ bool sim_decode(const char *text, Sim *out)
         if (!s.rng) s.rng = default_seed;
     } else {
         unsigned long long rng;
-        if (*tail != ' ' || sscanf(tail, "%3d %10llu %c", &s.disruption, &rng, &extra) != 2
+        if (*tail != ' ' || sscanf(tail, "%8d %10llu %c", &s.disruption, &rng, &extra) != 2
             || rng == 0 || rng > UINT32_MAX)
             return false;
         s.rng = (uint32_t)rng;
@@ -173,12 +194,15 @@ bool sim_decode(const char *text, Sim *out)
     int slots = offices[s.tier].amenity_slots;
     // Let older offices retain amenities they already paid for.
     int saved_slots = legacy || slots < LEGACY_AMENITY_LIMIT ? LEGACY_AMENITY_LIMIT : slots;
+    // At most one resignation and one replacement per completed week.
+    int disruption_limit = (STAFF_LIMIT - 1)*HIRE_DISRUPTION_MAX + (TIER_COUNT - 1)*MOVE_DISRUPTION_MAX
+        + (s.week - 1)*(HIRE_DISRUPTION_MAX + QUIT_DISRUPTION);
     if (s.cash < -25000 || s.cash > cash_limit || s.last_net < -25000 || s.last_net > 25000
         || s.week < 1 || s.week > WEEK_LIMIT
         || s.staff < 1 || s.staff > offices[s.tier].capacity
         || s.furniture < 0 || s.furniture > UPGRADE_LIMIT
         || s.tech < 0 || s.tech > UPGRADE_LIMIT || s.amenities < 0 || s.amenities > saved_slots
-        || s.disruption < 0 || s.disruption > DISRUPTION_LIMIT
+        || s.disruption < 0 || s.disruption > disruption_limit
         || s.reputation < 0 || s.reputation > 25 || s.streak < 0 || s.streak > THRIVE_WEEKS
         || (won != 0 && won != 1) || (closed != 0 && closed != 1) || closed != (s.cash < 0)
         || (s.streak == THRIVE_WEEKS && !won))

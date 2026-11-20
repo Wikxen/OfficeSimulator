@@ -18,11 +18,17 @@ Office, Team Loft, and Headquarters. Win by keeping a full Headquarters
 profitable with at least 85% satisfaction for three consecutive weeks. You can
 keep playing after winning.
 
-Hiring adds **6–10 disruption points**, and a move adds **18–24**. Those
+Hiring adds **8–12 disruption points**, and a move adds **22–28**. Those
 penalties stack if you expand quickly: each point takes one point off
 satisfaction, down to zero. Completing a week removes **3 disruption points**
 after that week's results are calculated. The cohesion meter shows your current
 penalty and the weeks left until the team settles if you make no further changes.
+
+At **35 disruption points**, there's a **10% weekly chance** that one teammate
+quits. Each additional point adds one percentage point of risk, up to **65%**.
+The dashboard shows your current odds. A resignation happens after the week's
+finances are settled and adds **8 disruption points** on top of normal recovery,
+so disruption rises by **5 points** that week. The founder never quits.
 
 The Starter Suite has **1 amenity slot**, the Studio Office has **4**, the Team
 Loft has **7**, and Headquarters has **10**. Each perk costs money to install and

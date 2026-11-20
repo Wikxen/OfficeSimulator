@@ -5,7 +5,7 @@
 #include "sim.h"
 
 enum { SCENE_X = 42, SCENE_Y = 259, SCENE_W = 531, SCENE_H = 256, SCENE_CUE_MS = 1500 };
-enum { SCENE_WEEK = ACTION_COUNT, SCENE_NEW };
+enum { SCENE_WEEK = ACTION_COUNT, SCENE_QUIT, SCENE_NEW };
 
 typedef struct {
     int kind;

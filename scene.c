@@ -316,7 +316,7 @@ static void spark(HDC dc, int x, int y, int size, COLORREF color)
 static void feedback(HDC dc, const Sim *s, int kind, unsigned age)
 {
     static const char *const labels[] = {"Furniture installed", "Technology online", "New perks unlocked",
-        "Welcome aboard!", "Office move complete", "Week complete", "A fresh start"};
+        "Welcome aboard!", "Office move complete", "Week complete", "A teammate quit", "A fresh start"};
     static const Spot rays[] = {{-3,-2},{0,-3},{3,-2},{-4,0},{4,0},{-2,2},{2,2}};
     char msg[56];
     const char *label = kind == AMENITIES && s->amenities ? amenities[s->amenities - 1].name : labels[kind];
@@ -326,7 +326,8 @@ static void feedback(HDC dc, const Sim *s, int kind, unsigned age)
         snprintf(msg, sizeof msg, "Weekly net: %s$%lld", s->last_net < 0 ? "-" : s->last_net > 0 ? "+" : "",
             s->last_net < 0 ? -s->last_net : s->last_net);
         accent = s->last_net < 0 ? RGB(231, 141, 135) : LEAF;
-    } else if (kind == TECH || kind == AMENITIES) accent = GLASS;
+    } else if (kind == SCENE_QUIT) accent = RGB(231, 141, 135);
+    else if (kind == TECH || kind == AMENITIES) accent = GLASS;
     if (kind == MOVE && age < 900) {
         int x = 340 - (int)age/5;
         oval(dc, x - 13, 233, 42, 7, SHADOW);
@@ -340,7 +341,7 @@ static void feedback(HDC dc, const Sim *s, int kind, unsigned age)
     } else if (kind != SCENE_NEW && kind != MOVE && age < 760) {
         int count = kind == FURNITURE || kind == TECH ? s->staff : 1;
         for (int n = 0; n < count; ++n) {
-            Spot p = station(s->tier, kind == HIRE ? s->staff - 1 : n);
+            Spot p = station(s->tier, kind == HIRE ? s->staff - 1 : kind == SCENE_QUIT ? s->staff : n);
             if (kind == AMENITIES && s->amenities) p = amenity_spot(s, s->amenities - 1);
             if (kind == SCENE_WEEK) p = (Spot){264, 143};
             int spread = 3 + (int)age / (kind == SCENE_WEEK ? 28 : 90);

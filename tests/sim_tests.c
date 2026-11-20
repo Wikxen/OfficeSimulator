@@ -49,7 +49,7 @@ static void check_growth(void)
             if (!s.disruption && s.cash >= sim_price(&s, MOVE) + 1500 && sim_buy(&s, MOVE))
                 visited[s.tier] = true;
             assert(sim_forecast(&s).net > 0);
-            assert(sim_advance(&s));
+            assert(sim_advance(&s) == WEEK_FINISHED);
             check_round_trip(&s);
         }
         for (int i = 0; i < TIER_COUNT; ++i) assert(visited[i]);
@@ -95,9 +95,16 @@ static void check_cohesion(void)
         assert(disrupted.revenue < sim_forecast(&settled).revenue);
         while (s.disruption > 0) {
             int before = s.disruption;
+            int staff = s.staff;
             Money net = sim_forecast(&s).net;
-            assert(sim_advance(&s) && s.last_net == net);
-            assert(s.disruption == (before > COHESION_RECOVERY ? before - COHESION_RECOVERY : 0));
+            WeekResult result = sim_advance(&s);
+            assert(result != WEEK_BLOCKED && s.last_net == net);
+            int expected = before > COHESION_RECOVERY ? before - COHESION_RECOVERY : 0;
+            if (result == WEEK_TEAMMATE_QUIT) {
+                assert(staff > 1 && s.staff == staff - 1);
+                expected += QUIT_DISRUPTION;
+            } else assert(s.staff == staff);
+            assert(s.disruption == expected);
         }
     }
     assert(hire_rolls == (1u << (HIRE_DISRUPTION_MAX - HIRE_DISRUPTION_MIN + 1)) - 1);
@@ -109,7 +116,56 @@ static void check_cohesion(void)
     Sim settled = rushed;
     settled.disruption = 0;
     assert(sim_forecast(&settled).net > 0 && sim_forecast(&rushed).net < 0);
-    assert(sim_advance(&rushed) && rushed.closed);
+    assert(sim_advance(&rushed) == WEEK_FINISHED && rushed.closed && rushed.staff == 2);
+}
+
+static void check_resignations(void)
+{
+    int quit_count = 0;
+    for (uint32_t seed = 1; seed <= 100; ++seed) {
+        Sim s = sim_new(seed);
+        s.cash = 100000;
+        s.staff = 2;
+        s.disruption = 34;
+        assert(sim_quit_chance(&s) == 0);
+        Sim safe = s;
+        assert(sim_advance(&safe) == WEEK_FINISHED && safe.staff == 2 && safe.rng == seed);
+        s.disruption = 35;
+        assert(sim_quit_chance(&s) == 10);
+        s.disruption = 50;
+        assert(sim_quit_chance(&s) == 25);
+        s.disruption = 100;
+        assert(sim_quit_chance(&s) == 65);
+
+        Sim loaded;
+        char save[128];
+        sim_encode(&s, save, sizeof save);
+        assert(sim_decode(save, &loaded));
+        Forecast before = sim_forecast(&s);
+        Money cash = s.cash;
+        WeekResult result = sim_advance(&s);
+        assert(sim_advance(&loaded) == result);
+        assert(loaded.disruption == s.disruption && loaded.staff == s.staff && loaded.rng == s.rng);
+        assert(s.last_net == before.net && s.cash == cash + before.net);
+        if (result == WEEK_TEAMMATE_QUIT) {
+            ++quit_count;
+            assert(s.staff == 1 && s.disruption == 105 && s.streak == 0);
+            assert(sim_forecast(&s).costs == before.costs - 385);
+            assert(sim_quit_chance(&s) == 0);
+            uint32_t state = s.rng;
+            assert(sim_advance(&s) == WEEK_FINISHED && s.staff == 1 && s.rng == state);
+        } else {
+            assert(result == WEEK_FINISHED && s.staff == 2 && s.disruption == 97);
+        }
+        check_round_trip(&s);
+    }
+    assert(quit_count > 0 && quit_count < 100);
+
+    Sim chained = sim_new(1);
+    chained.cash = 100000;
+    chained.week = 100;
+    chained.disruption = 1000;
+    check_round_trip(&chained);
 }
 
 static void check_amenities(void)
@@ -163,7 +219,7 @@ static void check_limits(void)
     assert(!sim_decode("OFFICE1 2400 0 1 0 1 0 0 0 0 0 0 0 junk", &untouched));
     assert(!sim_decode("OFFICE1 2400 0 1", &untouched));
     assert(!sim_decode("OFFICE2 2400 0 1 0 1 0 0 5 0 0 0 0 0 1", &untouched));
-    assert(!sim_decode("OFFICE2 2400 0 1 0 1 0 0 0 0 0 0 0 223 1", &untouched));
+    assert(!sim_decode("OFFICE2 2400 0 1 0 1 0 0 0 0 0 0 0 265 1", &untouched));
     assert(!sim_decode("OFFICE2 2400 0 1 0 1 0 0 0 0 0 0 0 0 0", &untouched));
     assert(!sim_decode("OFFICE2 2400 0 1 0 1 0 0 0 0 0 0 0 0 4294967296", &untouched));
     assert(untouched.cash == 2400 && untouched.tier == 0 && untouched.staff == 1);
@@ -173,6 +229,7 @@ int main(void)
 {
     check_start();
     check_cohesion();
+    check_resignations();
     check_amenities();
     check_growth();
     check_limits();

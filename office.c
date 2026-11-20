@@ -123,8 +123,11 @@ static void dashboard(HDC dc)
             (game.disruption + COHESION_RECOVERY - 1)/COHESION_RECOVERY);
     else lstrcpyA(buf, "COHESION 100%  |  TEAM SETTLED");
     text(dc, 42, 520, 310, 25, TINY, game.disruption ? RED : MUTED, buf, DT_LEFT);
-    snprintf(buf, sizeof buf, "Reputation: +%d%% revenue", 2*game.reputation);
-    text(dc, 350, 520, 223, 25, BODY, MUTED, buf, DT_RIGHT);
+    int quit_chance = sim_quit_chance(&game);
+    if (quit_chance)
+        snprintf(buf, sizeof buf, "Quit risk: %d%%  |  Rep: +%d%%", quit_chance, 2*game.reputation);
+    else snprintf(buf, sizeof buf, "Reputation: +%d%% revenue", 2*game.reputation);
+    text(dc, 350, 520, 223, 25, BODY, quit_chance ? RED : MUTED, buf, DT_RIGHT);
     box(dc, 42, 548, 531, 9, LINE);
     box(dc, 42, 548, 531*cohesion/100, 9, game.disruption ? RGB(173, 113, 25) : GREEN);
     money(a, f.revenue, false);
@@ -317,15 +320,19 @@ static void on_command(HWND window, int id)
         else lstrcpyA(update, "Upgrade installed. Check its effect on team satisfaction and profit.");
     } else if (id == NEXT_WEEK) {
         int finished = game.week;
-        if (!sim_advance(&game)) {
+        WeekResult result = sim_advance(&game);
+        if (result == WEEK_BLOCKED) {
             if (!game.closed) lstrcpyA(update, "The calendar limit has been reached.");
             refresh(window);
             return;
         }
         char amount[32];
-        cue_kind = SCENE_WEEK;
+        cue_kind = result == WEEK_TEAMMATE_QUIT ? SCENE_QUIT : SCENE_WEEK;
         money(amount, game.last_net, true);
-        if (game.disruption < before)
+        if (result == WEEK_TEAMMATE_QUIT)
+            snprintf(update, sizeof update, "Week %d: %s. A teammate quit; disruption rose by %d points.",
+                finished, amount, game.disruption - before);
+        else if (game.disruption < before)
             snprintf(update, sizeof update, "Week %d closed at %s. Disruption fell by %d points%s",
                 finished, amount, before - game.disruption, game.disruption ? "." : "; the team is settled.");
         else
