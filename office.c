@@ -121,9 +121,10 @@ static void dashboard(HDC dc)
     text(dc, 360, 221, 213, 28, BODY, MUTED, buf, DT_RIGHT);
     floor_plan(dc);
     int cohesion = game.disruption < 100 ? 100 - game.disruption : 0;
+    int recovery = sim_cohesion_recovery(&game);
     if (game.disruption)
         snprintf(buf, sizeof buf, "COHESION %d%%  |  -%d MOOD  |  %d WK TO SETTLE", cohesion, f.mood_loss,
-            (game.disruption + COHESION_RECOVERY - 1)/COHESION_RECOVERY);
+            (game.disruption + recovery - 1)/recovery);
     else lstrcpyA(buf, "COHESION 100%  |  TEAM SETTLED");
     text(dc, 42, 520, 310, 25, TINY, game.disruption ? RED : MUTED, buf, DT_LEFT);
     int quit_chance = sim_quit_chance(&game);
@@ -136,7 +137,11 @@ static void dashboard(HDC dc)
     money(a, f.revenue, false);
     money(b, f.costs, false);
     snprintf(buf, sizeof buf, "Weekly forecast: %s revenue  |  %s expenses", a, b);
-    text(dc, 42, 561, 531, 24, BODY, INK, buf, DT_LEFT);
+    text(dc, 42, 561, 374, 24, BODY, INK, buf, DT_LEFT);
+    if (!game.closed) {
+        snprintf(buf, sizeof buf, "Recovery: %d pt/wk", recovery);
+        text(dc, 424, 561, 149, 24, BODY, MUTED, buf, DT_RIGHT);
+    }
 
     box(dc, 607, 184, 369, 406, WHITE);
     text(dc, 625, 192, 335, 24, TINY, MUTED, "INVEST IN YOUR OFFICE", DT_LEFT);

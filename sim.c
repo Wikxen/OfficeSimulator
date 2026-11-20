@@ -125,6 +125,13 @@ bool sim_buy(Sim *s, Action action)
     return true;
 }
 
+int sim_cohesion_recovery(const Sim *s)
+{
+    if (s->staff <= 3) return 3;
+    if (s->staff <= 8) return 2;
+    return 1;
+}
+
 WeekResult sim_advance(Sim *s)
 {
     if (s->closed || s->week == WEEK_LIMIT) return WEEK_BLOCKED;
@@ -148,7 +155,8 @@ WeekResult sim_advance(Sim *s)
     int chance = sim_quit_chance(s);
     bool quit = chance > 0 && roll(s, 100) < (uint32_t)chance;
     if (!s->closed) {
-        s->disruption = s->disruption > COHESION_RECOVERY ? s->disruption - COHESION_RECOVERY : 0;
+        int recovery = sim_cohesion_recovery(s);
+        s->disruption = s->disruption > recovery ? s->disruption - recovery : 0;
         if (quit) {
             --s->staff;
             s->disruption += QUIT_DISRUPTION;

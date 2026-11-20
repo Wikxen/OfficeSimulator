@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 enum { TIER_COUNT = 4, UPGRADE_LIMIT = 4, THRIVE_WEEKS = 3, THRIVE_MOOD = 85 };
-enum { AMENITY_COUNT = 10, STAFF_LIMIT = 16, COHESION_RECOVERY = 3,
+enum { AMENITY_COUNT = 10, STAFF_LIMIT = 16,
     HIRE_DISRUPTION_MIN = 8, HIRE_DISRUPTION_MAX = 12,
     MOVE_DISRUPTION_MIN = 22, MOVE_DISRUPTION_MAX = 28, QUIT_DISRUPTION = 8 };
 typedef long long Money;
@@ -49,6 +49,7 @@ Money sim_price(const Sim *s, Action action);
 const char *sim_block(const Sim *s, Action action);
 bool sim_buy(Sim *s, Action action);
 int sim_quit_chance(const Sim *s);
+int sim_cohesion_recovery(const Sim *s);
 WeekResult sim_advance(Sim *s);
 int sim_encode(const Sim *s, char *out, size_t size);
 bool sim_decode(const char *text, Sim *out);

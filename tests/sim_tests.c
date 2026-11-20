@@ -37,11 +37,12 @@ static void check_start(void)
 
 static void check_growth(void)
 {
-    int fastest = 100, slowest = 0;
+    enum { CAMPAIGN_LIMIT = 200 };
+    int fastest = CAMPAIGN_LIMIT, slowest = 0;
     for (uint32_t seed = 1; seed <= 64; ++seed) {
         Sim s = sim_new(seed);
         bool visited[TIER_COUNT] = {true};
-        while (!s.won && s.week <= 100) {
+        while (!s.won && s.week <= CAMPAIGN_LIMIT) {
             if (s.furniture < 3) sim_buy(&s, FURNITURE);
             if (s.tech < 3) sim_buy(&s, TECH);
             if (s.amenities < 3) sim_buy(&s, AMENITIES);
@@ -96,10 +97,11 @@ static void check_cohesion(void)
         while (s.disruption > 0) {
             int before = s.disruption;
             int staff = s.staff;
+            int recovery = sim_cohesion_recovery(&s);
             Money net = sim_forecast(&s).net;
             WeekResult result = sim_advance(&s);
             assert(result != WEEK_BLOCKED && s.last_net == net);
-            int expected = before > COHESION_RECOVERY ? before - COHESION_RECOVERY : 0;
+            int expected = before > recovery ? before - recovery : 0;
             if (result == WEEK_TEAMMATE_QUIT) {
                 assert(staff > 1 && s.staff == staff - 1);
                 expected += QUIT_DISRUPTION;
@@ -117,6 +119,35 @@ static void check_cohesion(void)
     settled.disruption = 0;
     assert(sim_forecast(&settled).net > 0 && sim_forecast(&rushed).net < 0);
     assert(sim_advance(&rushed) == WEEK_FINISHED && rushed.closed && rushed.staff == 2);
+}
+
+static void check_recovery_by_team_size(void)
+{
+    const int rates[] = {3, 3, 3, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1, 1};
+    for (int staff = 1; staff <= STAFF_LIMIT; ++staff) {
+        Sim s = sim_new(1);
+        s.tier = TIER_COUNT - 1;
+        s.staff = staff;
+        s.cash = 100000;
+        s.disruption = 6;
+        int rate = rates[staff - 1];
+        assert(sim_cohesion_recovery(&s) == rate);
+        for (int week = 0; week < 6/rate; ++week) {
+            assert(sim_advance(&s) == WEEK_FINISHED);
+            assert(s.disruption == 6 - (week + 1)*rate);
+        }
+        s.disruption = 1;
+        assert(sim_advance(&s) == WEEK_FINISHED && s.disruption == 0);
+    }
+
+    Sim s = sim_new(2);
+    s.tier = TIER_COUNT - 1;
+    s.staff = 9;
+    s.cash = 100000;
+    s.disruption = 100;
+    assert(sim_advance(&s) == WEEK_TEAMMATE_QUIT);
+    assert(s.staff == 8 && s.disruption == 107);
+    assert(sim_cohesion_recovery(&s) == 2);
 }
 
 static void check_resignations(void)
@@ -229,6 +260,7 @@ int main(void)
 {
     check_start();
     check_cohesion();
+    check_recovery_by_team_size();
     check_resignations();
     check_amenities();
     check_growth();
