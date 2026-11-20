@@ -4,8 +4,10 @@
 #include "sim.h"
 #include "save.h"
 #include "scene.h"
+#include "sound.h"
 
-enum { WIDTH = 1000, HEIGHT = 700, FIRST_ACTION = 100, NEXT_WEEK = 110, NEW_GAME };
+enum { WIDTH = 1000, HEIGHT = 700, FIRST_ACTION = 100, NEXT_WEEK = 110, NEW_GAME, TOGGLE_SOUND,
+    SOUND_BUTTON_W = 136, SOUND_BUTTON_H = 36 };
 enum { TINY, BODY, STRONG, VALUE, TITLE, FONT_COUNT };
 enum { FRAME_TIMER = 1, FRAME_MS = 40 };
 
@@ -20,13 +22,14 @@ enum { FRAME_TIMER = 1, FRAME_MS = 40 };
 #define GOLD RGB(245, 198, 108)
 
 static Sim game;
-static HWND actions[ACTION_COUNT], next_button, new_button;
+static HWND actions[ACTION_COUNT], next_button, new_button, sound_button;
 static HFONT fonts[FONT_COUNT];
 static int client_w = WIDTH, client_h = HEIGHT;
 static char update[180];
 static const char *save_status = "";
 static SceneCue cue;
 static bool has_cue, motion_enabled, motion_error;
+static bool audio_ready, muted;
 static const char *const upgrade_details[2][UPGRADE_LIMIT + 1] = {
     {"Simple desks and chairs", "Walnut desks and storage", "Desk lamps and better seating",
      "Standing desks and ergonomic chairs", "Standing desks and ergonomic chairs installed"},
@@ -167,8 +170,9 @@ static void dashboard(HDC dc)
         THRIVE_MOOD, game.streak, THRIVE_WEEKS);
     text(dc, 41, 611, 605, 25, STRONG, game.closed ? RED : INK, buf, DT_LEFT);
     text(dc, 41, 637, 605, 26, BODY, MUTED, update, DT_LEFT);
-    text(dc, 24, 677, 952, 21, TINY, *save_status || motion_error ? RED : MUTED,
-        *save_status ? save_status : motion_error ? "Animation is unavailable. The game is still playable."
+    text(dc, 24, 677, 952, 21, TINY, *save_status || motion_error || !audio_ready ? RED : MUTED,
+        *save_status ? save_status : !audio_ready ? "Audio is unavailable. The game is still playable."
+        : motion_error ? "Animation is unavailable. The game is still playable."
         : "Autosaves locally after each action.   |   Tab to select, Space to activate.", DT_LEFT);
 }
 
@@ -267,8 +271,9 @@ static void draw_button(const DRAWITEMSTRUCT *item)
 {
     HDC dc = item->hDC;
     int saved = SaveDC(dc);
-    int w = item->CtlID < NEXT_WEEK ? 333 : item->CtlID == NEXT_WEEK ? 180 : 102;
-    int h = item->CtlID < NEXT_WEEK ? 39 : 40;
+    int w = item->CtlID < NEXT_WEEK ? 333 : item->CtlID == NEXT_WEEK ? 180
+        : item->CtlID == TOGGLE_SOUND ? SOUND_BUTTON_W : 102;
+    int h = item->CtlID < NEXT_WEEK ? 39 : item->CtlID == TOGGLE_SOUND ? SOUND_BUTTON_H : 40;
     map_dc(dc, w, h, item->rcItem.right, item->rcItem.bottom);
     bool disabled = (item->itemState & ODS_DISABLED) != 0;
     bool pressed = (item->itemState & ODS_SELECTED) != 0;
@@ -303,8 +308,33 @@ static HWND button(HWND window, int id, const char *caption, int x, int y, int w
         window, (HMENU)(INT_PTR)id, GetModuleHandleW(NULL), NULL);
 }
 
+static void refresh_sound(void)
+{
+    SetWindowTextA(sound_button, !audio_ready ? "No audio device" : muted ? "Sound: off" : "Sound: on");
+    EnableWindow(sound_button, audio_ready);
+    InvalidateRect(sound_button, NULL, FALSE);
+}
+
+static void play_action(int kind)
+{
+    static const SoundEffect sounds[] = {
+        [FURNITURE] = SOUND_FURNITURE, [TECH] = SOUND_TECH, [AMENITIES] = SOUND_AMENITIES,
+        [HIRE] = SOUND_HIRE, [MOVE] = SOUND_MOVE, [SCENE_WEEK] = SOUND_PROFIT,
+        [SCENE_QUIT] = SOUND_QUIT, [SCENE_NEW] = SOUND_NEW,
+    };
+    if (audio_ready && !muted)
+        sound_play(kind == SCENE_WEEK && game.last_net < 0 ? SOUND_LOSS : sounds[kind]);
+}
+
 static void on_command(HWND window, int id)
 {
+    if (id == TOGGLE_SOUND) {
+        if (audio_ready) {
+            muted = !muted;
+            refresh_sound();
+        }
+        return;
+    }
     int cue_kind;
     int before = game.disruption;
     if (id >= FIRST_ACTION && id < FIRST_ACTION + ACTION_COUNT) {
@@ -347,6 +377,7 @@ static void on_command(HWND window, int id)
         lstrcpyA(update, "Start with an upgrade or finish the week to earn more cash.");
     } else return;
 
+    play_action(cue_kind);
     save_status = save_game(&game) ? "" : "Autosave failed. Your progress is only in memory.";
     cue = (SceneCue){cue_kind, GetTickCount64()};
     has_cue = motion_enabled;
@@ -377,13 +408,24 @@ static LRESULT CALLBACK window_proc(HWND window, UINT msg, WPARAM wp, LPARAM lp)
         }
         next_button = button(window, NEXT_WEEK, "Finish week", 772, 619, 180, 40);
         new_button = button(window, NEW_GAME, "New game", 658, 619, 102, 40);
-        if (!next_button || !new_button) return -1;
+        sound_button = button(window, TOGGLE_SOUND, "Sound: on", 548, 22, SOUND_BUTTON_W, SOUND_BUTTON_H);
+        if (!next_button || !new_button || !sound_button) return -1;
+        audio_ready = sound_open(window, game.staff, true);
+        refresh_sound();
         update_motion(window);
         refresh(window);
         return 0;
     }
     case WM_PAINT: paint(window); return 0;
     case WM_ERASEBKGND: return 1;
+    case MM_WOM_DONE:
+        if (audio_ready && !sound_done(wp, lp, game.staff, !muted && !IsIconic(window))) {
+            audio_ready = false;
+            sound_close();
+            refresh_sound();
+            InvalidateRect(window, NULL, FALSE);
+        }
+        return 0;
     case WM_TIMER:
         if (wp == FRAME_TIMER && motion_enabled && !IsIconic(window) && (!game.closed || has_cue)) {
             if (has_cue && GetTickCount64() - cue.since >= SCENE_CUE_MS) has_cue = false;
@@ -398,12 +440,14 @@ static LRESULT CALLBACK window_proc(HWND window, UINT msg, WPARAM wp, LPARAM lp)
         if (HIWORD(wp) == BN_CLICKED && lp) on_command(window, LOWORD(wp));
         return 0;
     case WM_DRAWITEM:
-        if (wp >= FIRST_ACTION && wp <= NEW_GAME) {
+        if (wp >= FIRST_ACTION && wp <= TOGGLE_SOUND) {
             draw_button((const DRAWITEMSTRUCT *)lp);
             return TRUE;
         }
         break;
     case WM_DESTROY:
+        audio_ready = false;
+        sound_close();
         if (motion_enabled) KillTimer(window, FRAME_TIMER);
         PostQuitMessage(0);
         return 0;

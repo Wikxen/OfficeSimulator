@@ -11,7 +11,8 @@ try {
 
     $flags = @('-std=c17', '-O2', '-Wall', '-Wextra', '-Werror', '-static')
     New-Item -ItemType Directory -Force .\dist | Out-Null
-    & $gcc @flags -s -mwindows -o .\dist\OfficeSimulator.exe .\office.c .\scene.c .\sim.c .\save.c -lgdi32 -lshell32
+    & $gcc @flags -s -mwindows -o .\dist\OfficeSimulator.exe .\office.c .\scene.c .\sim.c .\save.c `
+        .\sound.c .\sound_mix.c -lgdi32 -lshell32 -lwinmm -lm
     if ($LASTEXITCODE -ne 0) { throw 'Game build failed.' }
 
     if ($Test) {
@@ -24,6 +25,10 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Scene test build failed.' }
         & .\build\scene-tests.exe
         if ($LASTEXITCODE -ne 0) { throw 'Scene tests failed.' }
+        & $gcc @flags -I. -o .\build\sound-tests.exe .\tests\sound_tests.c .\sound_mix.c -lm
+        if ($LASTEXITCODE -ne 0) { throw 'Sound test build failed.' }
+        & .\build\sound-tests.exe
+        if ($LASTEXITCODE -ne 0) { throw 'Sound tests failed.' }
     }
 }
 finally {

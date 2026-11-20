@@ -43,6 +43,12 @@ finish a week. The game follows the
 Windows **Animation effects** setting; turning it off keeps the office still
 without changing gameplay.
 
+A soft original music loop plays alongside ventilation hum, keyboard taps,
+and occasional paper shuffles. Purchases, hires, moves, weekly results, and
+resignations each have their own sound. Use **Sound: on/off** at the top to
+mute or unmute everything for the current session. Audio goes quiet while the
+window is minimized. No audio files are needed alongside the executable.
+
 Use the mouse or **Tab** and **Space**. Each purchase and completed week autosaves
 to `%LOCALAPPDATA%\OfficeSimulator\office.save`. **New game** replaces that save
 after confirmation.
