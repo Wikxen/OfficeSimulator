@@ -3,9 +3,11 @@
 #include <stdio.h>
 #include "sim.h"
 #include "save.h"
+#include "scene.h"
 
 enum { WIDTH = 1000, HEIGHT = 700, FIRST_ACTION = 100, NEXT_WEEK = 110, NEW_GAME };
 enum { TINY, BODY, STRONG, VALUE, TITLE, FONT_COUNT };
+enum { FRAME_TIMER = 1, FRAME_MS = 40 };
 
 #define INK RGB(23, 48, 47)
 #define MUTED RGB(72, 98, 95)
@@ -23,12 +25,15 @@ static HFONT fonts[FONT_COUNT];
 static int client_w = WIDTH, client_h = HEIGHT;
 static char update[180];
 static const char *save_status = "";
-static const char *const details[ACTION_COUNT] = {
-    "More comfortable desks and chairs",
-    "Better tools and higher output",
-    "Perks that make work feel better",
-    "Recruit a colleague for $385/week",
-    "More room for your team to grow",
+static SceneCue cue;
+static bool has_cue, motion_enabled, motion_error;
+static const char *const upgrade_details[3][UPGRADE_LIMIT + 1] = {
+    {"Simple desks and chairs", "Walnut desks and storage", "Desk lamps and better seating",
+     "Standing desks and ergonomic chairs", "Standing desks and ergonomic chairs installed"},
+    {"Laptops for the team", "Dedicated monitors and keyboards", "Dual-monitor workstations",
+     "Performance towers", "Performance towers installed"},
+    {"Coffee station", "Plants for the break area", "Sofa and coffee table",
+     "Arcade cabinet", "Arcade cabinet installed"},
 };
 
 static void box(HDC dc, int x, int y, int w, int h, COLORREF color)
@@ -73,35 +78,9 @@ static void badge(HDC dc, int x, const char *label, const char *value, COLORREF 
 
 static void floor_plan(HDC dc)
 {
-    const Office *office = &offices[game.tier];
-    COLORREF floor = RGB(227, 237, 232);
-    box(dc, 42, 259, 531, 256, floor);
-    for (int i = 0; i < 10; ++i) box(dc, 42 + i*53, 259, 1, 256, LINE);
-    for (int i = 0; i < 8; ++i) box(dc, 42, 259 + i*32, 531, 1, LINE);
-
-    int cols = game.tier == 0 ? 2 : game.tier == 3 ? 4 : 3;
-    int rows = (office->capacity + cols - 1)/cols;
-    for (int i = 0; i < office->capacity; ++i) {
-        int x = 56 + (i % cols)*(502/cols) + (502/cols - 87)/2;
-        int y = 273 + (i / cols)*(229/rows) + (229/rows - 49)/2;
-        bool occupied = i < game.staff;
-        box(dc, x, y, 87, 49, occupied ? WHITE : LINE);
-        if (!occupied) {
-            text(dc, x, y, 87, 49, TINY, MUTED, "Vacant", DT_CENTER);
-            continue;
-        }
-        box(dc, x, y, 3, 49, i == 0 ? GOLD : GREEN);
-        if (game.tech) {
-            box(dc, x + 11, y + 9, 24, 16, GREEN);
-            box(dc, x + 21, y + 25, 4, 5, MUTED);
-        }
-        if (game.furniture) box(dc, x + 8, y + 30, 30, 4, GOLD);
-        if (!game.tech && !game.furniture) box(dc, x + 18, y + 19, 10, 10, LINE);
-        char name[16];
-        if (!i) lstrcpyA(name, "You");
-        else snprintf(name, sizeof name, "%02d", i + 1);
-        text(dc, x + 42, y, 41, 49, TINY, INK, name, DT_CENTER);
-    }
+    HGDIOBJ old = SelectObject(dc, fonts[TINY]);
+    scene_draw(dc, &game, GetTickCount64(), motion_enabled, has_cue ? &cue : NULL);
+    SelectObject(dc, old);
 }
 
 static void dashboard(HDC dc)
@@ -145,10 +124,11 @@ static void dashboard(HDC dc)
 
     box(dc, 607, 184, 369, 406, WHITE);
     text(dc, 625, 192, 335, 24, TINY, MUTED, "INVEST IN YOUR OFFICE", DT_LEFT);
-    for (int i = 0; i < ACTION_COUNT; ++i) {
-        int y = 222 + i*71;
-        text(dc, 625, y, 335, 21, BODY, MUTED, details[i], DT_LEFT);
-    }
+    int levels[] = {game.furniture, game.tech, game.amenities};
+    for (int i = FURNITURE; i <= AMENITIES; ++i)
+        text(dc, 625, 222 + i*71, 335, 21, BODY, MUTED, upgrade_details[i][levels[i]], DT_LEFT);
+    text(dc, 625, 222 + HIRE*71, 335, 21, BODY, MUTED, "Recruit a colleague for $385/week", DT_LEFT);
+    text(dc, 625, 222 + MOVE*71, 335, 21, BODY, MUTED, "More room for your team to grow", DT_LEFT);
 
     box(dc, 24, 604, 952, 71, game.closed ? RGB(250, 230, 226) : MINT);
     if (game.closed) lstrcpyA(buf, "Office closed: expenses exceeded available cash.");
@@ -157,8 +137,9 @@ static void dashboard(HDC dc)
         THRIVE_MOOD, game.streak, THRIVE_WEEKS);
     text(dc, 41, 611, 605, 25, STRONG, game.closed ? RED : INK, buf, DT_LEFT);
     text(dc, 41, 637, 605, 26, BODY, MUTED, update, DT_LEFT);
-    text(dc, 24, 677, 952, 21, TINY, *save_status ? RED : MUTED,
-        *save_status ? save_status : "Autosaves locally after each action.   |   Tab to select, Space to activate.", DT_LEFT);
+    text(dc, 24, 677, 952, 21, TINY, *save_status || motion_error ? RED : MUTED,
+        *save_status ? save_status : motion_error ? "Animation is unavailable. The game is still playable."
+        : "Autosaves locally after each action.   |   Tab to select, Space to activate.", DT_LEFT);
 }
 
 static void map_dc(HDC dc, int logical_w, int logical_h, int pixel_w, int pixel_h)
@@ -168,27 +149,63 @@ static void map_dc(HDC dc, int logical_w, int logical_h, int pixel_w, int pixel_
     SetViewportExtEx(dc, pixel_w, pixel_h, NULL);
 }
 
+static RECT floor_pixels(void)
+{
+    return (RECT){MulDiv(SCENE_X, client_w, WIDTH), MulDiv(SCENE_Y, client_h, HEIGHT),
+        MulDiv(SCENE_X + SCENE_W, client_w, WIDTH), MulDiv(SCENE_Y + SCENE_H, client_h, HEIGHT)};
+}
+
+static void paint_region(HDC dc, const RECT *dirty)
+{
+    RECT floor = floor_pixels(), overlap;
+    if (IntersectRect(&overlap, &floor, dirty) && EqualRect(&overlap, dirty)) floor_plan(dc);
+    else dashboard(dc);
+}
+
 static void paint(HWND window)
 {
     PAINTSTRUCT ps;
     HDC dc = BeginPaint(window, &ps);
+    RECT r = ps.rcPaint;
+    int w = r.right - r.left, h = r.bottom - r.top;
+    if (!w || !h) {
+        EndPaint(window, &ps);
+        return;
+    }
     HDC buffer = CreateCompatibleDC(dc);
-    HBITMAP bitmap = buffer ? CreateCompatibleBitmap(dc, client_w, client_h) : NULL;
+    HBITMAP bitmap = buffer ? CreateCompatibleBitmap(dc, w, h) : NULL;
     if (bitmap) {
         HGDIOBJ old = SelectObject(buffer, bitmap);
         int saved = SaveDC(buffer);
         map_dc(buffer, WIDTH, HEIGHT, client_w, client_h);
-        dashboard(buffer);
+        SetViewportOrgEx(buffer, -r.left, -r.top, NULL);
+        paint_region(buffer, &r);
         RestoreDC(buffer, saved);
-        BitBlt(dc, 0, 0, client_w, client_h, buffer, 0, 0, SRCCOPY);
+        BitBlt(dc, r.left, r.top, w, h, buffer, 0, 0, SRCCOPY);
         SelectObject(buffer, old);
         DeleteObject(bitmap);
     } else {
         map_dc(dc, WIDTH, HEIGHT, client_w, client_h);
-        dashboard(dc);
+        paint_region(dc, &r);
     }
+
     if (buffer) DeleteDC(buffer);
     EndPaint(window, &ps);
+}
+
+static void update_motion(HWND window)
+{
+    BOOL enabled = FALSE;
+    bool queried = SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &enabled, 0) != FALSE;
+    if (queried && enabled && !motion_enabled) {
+        motion_enabled = SetTimer(window, FRAME_TIMER, FRAME_MS, NULL) != 0;
+        motion_error = !motion_enabled;
+    } else if (!queried || !enabled) {
+        if (motion_enabled) KillTimer(window, FRAME_TIMER);
+        motion_enabled = has_cue = false;
+        motion_error = !queried;
+    }
+    InvalidateRect(window, NULL, FALSE);
 }
 
 static void refresh(HWND window)
@@ -257,9 +274,11 @@ static HWND button(HWND window, int id, const char *caption, int x, int y, int w
 
 static void on_command(HWND window, int id)
 {
+    int cue_kind;
     if (id >= FIRST_ACTION && id < FIRST_ACTION + ACTION_COUNT) {
         Action action = id - FIRST_ACTION;
         if (!sim_buy(&game, action)) return;
+        cue_kind = action;
         if (action == MOVE) snprintf(update, sizeof update, "Moved into %s.", offices[game.tier].name);
         else if (action == HIRE) lstrcpyA(update, "A new colleague joined the team. Check the weekly forecast.");
         else lstrcpyA(update, "Upgrade installed. Check its effect on team satisfaction and profit.");
@@ -271,6 +290,7 @@ static void on_command(HWND window, int id)
             return;
         }
         char amount[32];
+        cue_kind = SCENE_WEEK;
         money(amount, game.last_net, true);
         snprintf(update, sizeof update, "Week %d closed at %s. %s", finished, amount,
             game.closed ? "Start a new game to try again." :
@@ -279,10 +299,13 @@ static void on_command(HWND window, int id)
         if (MessageBoxA(window, "Replace your current office and its autosave?", "Start a new game",
             MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) != IDYES) return;
         game = sim_new();
+        cue_kind = SCENE_NEW;
         lstrcpyA(update, "Start with an upgrade or finish the week to earn more cash.");
     } else return;
 
     save_status = save_game(&game) ? "" : "Autosave failed. Your progress is only in memory.";
+    cue = (SceneCue){cue_kind, GetTickCount64()};
+    has_cue = motion_enabled;
     refresh(window);
     HWND focus = GetFocus();
     if (!focus || focus == window || !IsWindowEnabled(focus))
@@ -311,11 +334,22 @@ static LRESULT CALLBACK window_proc(HWND window, UINT msg, WPARAM wp, LPARAM lp)
         next_button = button(window, NEXT_WEEK, "Finish week", 772, 619, 180, 40);
         new_button = button(window, NEW_GAME, "New game", 658, 619, 102, 40);
         if (!next_button || !new_button) return -1;
+        update_motion(window);
         refresh(window);
         return 0;
     }
     case WM_PAINT: paint(window); return 0;
     case WM_ERASEBKGND: return 1;
+    case WM_TIMER:
+        if (wp == FRAME_TIMER && motion_enabled && !IsIconic(window) && (!game.closed || has_cue)) {
+            if (has_cue && GetTickCount64() - cue.since >= SCENE_CUE_MS) has_cue = false;
+            RECT floor = floor_pixels();
+            InvalidateRect(window, &floor, FALSE);
+        }
+        return 0;
+    case WM_SETTINGCHANGE:
+        update_motion(window);
+        return 0;
     case WM_COMMAND:
         if (HIWORD(wp) == BN_CLICKED && lp) on_command(window, LOWORD(wp));
         return 0;
@@ -325,7 +359,10 @@ static LRESULT CALLBACK window_proc(HWND window, UINT msg, WPARAM wp, LPARAM lp)
             return TRUE;
         }
         break;
-    case WM_DESTROY: PostQuitMessage(0); return 0;
+    case WM_DESTROY:
+        if (motion_enabled) KillTimer(window, FRAME_TIMER);
+        PostQuitMessage(0);
+        return 0;
     }
     return DefWindowProcA(window, msg, wp, lp);
 }

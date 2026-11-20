@@ -18,6 +18,13 @@ Office, Team Loft, and Headquarters. Win by keeping a full Headquarters
 profitable with at least 85% satisfaction for three consecutive weeks. You can
 keep playing after winning.
 
+Every upgrade changes the office: desks gain storage and lamps, laptops give
+way to dual monitors, and the empty break area grows into a lounge with an
+arcade cabinet. Watch your team work between turns and look for short
+animations when you invest, hire, move, or finish a week. The game follows the
+Windows **Animation effects** setting; turning it off keeps the office still
+without changing gameplay.
+
 Use the mouse or **Tab** and **Space**. Each purchase and completed week autosaves
 to `%LOCALAPPDATA%\OfficeSimulator\office.save`. **New game** replaces that save
 after confirmation.

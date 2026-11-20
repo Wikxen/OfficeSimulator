@@ -11,7 +11,7 @@ try {
 
     $flags = @('-std=c17', '-O2', '-Wall', '-Wextra', '-Werror', '-static')
     New-Item -ItemType Directory -Force .\dist | Out-Null
-    & $gcc @flags -s -mwindows -o .\dist\OfficeSimulator.exe .\office.c .\sim.c .\save.c -lgdi32 -lshell32
+    & $gcc @flags -s -mwindows -o .\dist\OfficeSimulator.exe .\office.c .\scene.c .\sim.c .\save.c -lgdi32 -lshell32
     if ($LASTEXITCODE -ne 0) { throw 'Game build failed.' }
 
     if ($Test) {
@@ -20,6 +20,10 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Test build failed.' }
         & .\build\sim-tests.exe
         if ($LASTEXITCODE -ne 0) { throw 'Simulation tests failed.' }
+        & $gcc @flags -I. -o .\build\scene-tests.exe .\tests\scene_tests.c .\scene.c .\sim.c -lgdi32
+        if ($LASTEXITCODE -ne 0) { throw 'Scene test build failed.' }
+        & .\build\scene-tests.exe
+        if ($LASTEXITCODE -ne 0) { throw 'Scene tests failed.' }
     }
 }
 finally {
