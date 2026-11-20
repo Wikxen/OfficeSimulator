@@ -3,13 +3,18 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 enum { TIER_COUNT = 4, UPGRADE_LIMIT = 4, THRIVE_WEEKS = 3, THRIVE_MOOD = 85 };
+enum { AMENITY_COUNT = 10, STAFF_LIMIT = 16, COHESION_RECOVERY = 3,
+    HIRE_DISRUPTION_MIN = 6, HIRE_DISRUPTION_MAX = 10,
+    MOVE_DISRUPTION_MIN = 18, MOVE_DISRUPTION_MAX = 24,
+    DISRUPTION_LIMIT = (STAFF_LIMIT - 1)*HIRE_DISRUPTION_MAX + (TIER_COUNT - 1)*MOVE_DISRUPTION_MAX };
 typedef long long Money;
 
 typedef struct {
     const char *name;
-    int capacity;
+    int capacity, amenity_slots;
     Money rent, move;
 } Office;
 
@@ -18,18 +23,27 @@ typedef enum { FURNITURE, TECH, AMENITIES, HIRE, MOVE, ACTION_COUNT } Action;
 typedef struct {
     Money cash, last_net;
     int week, tier, staff, furniture, tech, amenities, reputation, streak;
+    int disruption;
+    uint32_t rng;
     bool won, closed;
 } Sim;
 
 typedef struct {
-    int mood;
+    int mood, mood_loss;
     Money revenue, costs, net;
 } Forecast;
 
+typedef struct {
+    const char *name;
+    int satisfaction;
+    Money price, upkeep;
+} Amenity;
+
 extern const Office offices[TIER_COUNT];
+extern const Amenity amenities[AMENITY_COUNT];
 extern const char *const action_names[ACTION_COUNT];
 
-Sim sim_new(void);
+Sim sim_new(uint32_t seed);
 Forecast sim_forecast(const Sim *s);
 Money sim_price(const Sim *s, Action action);
 const char *sim_block(const Sim *s, Action action);

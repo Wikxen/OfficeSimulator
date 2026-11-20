@@ -42,6 +42,23 @@ static void plant(HDC dc, int x, int y, COLORREF pot)
     oval(dc, x - 5, y - 29, 9, 12, LEAF);
 }
 
+static int lounge_left(const Sim *s)
+{
+    return s->tier == 0 && s->amenities <= 1 ? 427 : 395;
+}
+
+static int lounge_slots(const Sim *s)
+{
+    int capacity = offices[s->tier].amenity_slots;
+    return s->amenities > capacity ? s->amenities : capacity;
+}
+
+static Spot amenity_spot(const Sim *s, int i)
+{
+    if (lounge_slots(s) == 1) return (Spot){467, 165};
+    return (Spot){426 + (i % 2)*56, 122 + (i / 2)*25};
+}
+
 static void room(HDC dc, const Sim *s, ULONGLONG tick)
 {
     static const COLORREF walls[] = {RGB(181, 207, 194), RGB(172, 202, 196),
@@ -85,15 +102,16 @@ static void room(HDC dc, const Sim *s, ULONGLONG tick)
     rect(dc, 490, 20, 2, 6, INK);
     for (int i = 1; i <= 5; ++i)
         rect(dc, 490 + h.x*i/5, 25 + h.y*i/5, 2, 2, TEAL);
-    rect(dc, 12, 83, 385, 158, RGB(191, 194, 170));
-    rect(dc, 16, 87, 377, 150, RGB(232, 230, 209));
-    rect(dc, 403, 83, 108, 158, RGB(126, 160, 154));
-    rect(dc, 407, 87, 100, 150, RGB(166, 199, 183));
+    int left = lounge_left(s);
+    rect(dc, 12, 83, left - 18, 158, RGB(191, 194, 170));
+    rect(dc, 16, 87, left - 26, 150, RGB(232, 230, 209));
+    rect(dc, left, 83, 511 - left, 158, RGB(126, 160, 154));
+    rect(dc, left + 4, 87, 503 - left, 150, RGB(166, 199, 183));
     for (int y = 94; y < 234; y += 8) {
-        rect(dc, 410, y, 2, 3, CREAM);
+        rect(dc, left + 7, y, 2, 3, CREAM);
         rect(dc, 502, y, 2, 3, CREAM);
     }
-    caption(dc, 421, 90, "BREAK AREA", INK);
+    caption(dc, left + 13, 90, lounge_slots(s) == 1 ? "PERKS" : "BREAK AREA", INK);
 }
 
 static Spot station(int tier, int index)
@@ -198,40 +216,94 @@ static void person(HDC dc, Spot p, int index, int mood, ULONGLONG tick, unsigned
     if (index == 0) rect(dc, x - 2, y + 18, 4, 2, CREAM);
 }
 
-static void lounge(HDC dc, int level, ULONGLONG tick)
+static void draw_amenity(HDC dc, Spot p, int index, ULONGLONG tick)
 {
-    if (!level) {
-        caption(dc, 429, 153, "Empty", RGB(61, 93, 88));
-        return;
+    int x = p.x, y = p.y;
+    COLORREF wood = RGB(135, 99, 69), fabric = RGB(150, 159, 188), clay = RGB(173, 107, 76);
+    oval(dc, x - 19, y + 6, 38, 6, SHADOW);
+    switch (index) {
+    case 0:
+        rect(dc, x - 18, y, 36, 10, wood);
+        rect(dc, x - 18, y - 2, 36, 4, CREAM);
+        rect(dc, x - 12, y - 11, 13, 12, INK);
+        rect(dc, x - 10, y - 9, 9, 4, GLASS);
+        rect(dc, x + 5, y - 5, 6, 6, BRASS);
+        if (tick && tick/80 % 15 < 9)
+            oval(dc, x + 7, y - 7 - (int)(tick/80 % 15), 3, 3, CREAM);
+        break;
+    case 1:
+        plant(dc, x - 8, y + 10, clay);
+        oval(dc, x + 4, y - 3, 10, 12, LEAF);
+        rect(dc, x + 5, y + 5, 9, 6, BRASS);
+        break;
+    case 2:
+        rect(dc, x - 18, y - 9, 36, 16, INK);
+        rect(dc, x - 16, y - 8, 32, 7, fabric);
+        rect(dc, x - 12, y, 11, 5, fabric);
+        rect(dc, x + 1, y, 11, 5, fabric);
+        oval(dc, x - 9, y + 7, 18, 6, CREAM);
+        break;
+    case 3:
+        rect(dc, x - 11, y - 12, 22, 23, INK);
+        rect(dc, x - 8, y - 10, 16, 12, TEAL);
+        rect(dc, x - 7, y + 4, 14, 3, fabric);
+        oval(dc, x - 6 + (int)(tick/120 % 9), y - 6, 3, 3, BRASS);
+        break;
+    case 4:
+        rect(dc, x - 16, y - 8, 32, 18, wood);
+        rect(dc, x - 16, y - 9, 32, 4, CREAM);
+        for (int i = 0; i < 4; ++i)
+            rect(dc, x - 13 + i*7, y - 5, 5, 8, i % 2 ? BRASS : clay);
+        break;
+    case 5:
+        rect(dc, x - 16, y - 11, 32, 17, wood);
+        for (int i = -12; i <= 12; i += 6)
+            rect(dc, x + i, y - 10, 2, 12, BRASS);
+        oval(dc, x - 11, y - 2, 22, 13, fabric);
+        oval(dc, x - 7, y, 14, 8, CREAM);
+        break;
+    case 6:
+        rect(dc, x - 16, y - 8, 32, 18, wood);
+        rect(dc, x - 14, y - 7, 28, 12, TEAL);
+        rect(dc, x, y - 7, 1, 12, CREAM);
+        oval(dc, x - 10, y - 4, 4, 4, BRASS);
+        oval(dc, x + 7, y - 1, 4, 4, fabric);
+        break;
+    case 7:
+        rect(dc, x - 16, y - 5, 27, 14, fabric);
+        rect(dc, x - 10, y, 18, 3, INK);
+        oval(dc, x - 13, y - 2, 6, 7, INK);
+        oval(dc, x + 6, y - 2, 6, 7, INK);
+        oval(dc, x + 10, y - 11, 11, 11, BRASS);
+        break;
+    case 8:
+        rect(dc, x - 17, y - 12, 34, 22, wood);
+        for (int i = 0; i < 6; ++i) {
+            rect(dc, x - 13 + i*4, y - 9 + i%3, 3, 6 - i%3, i%2 ? BRASS : GLASS);
+            rect(dc, x - 13 + i*4, y + i%2, 3, 5 - i%2, i%2 ? clay : CREAM);
+        }
+        break;
+    case 9:
+        oval(dc, x - 17, y - 12, 34, 23, INK);
+        oval(dc, x - 14, y - 10, 28, 18, GLASS);
+        oval(dc, x - 9, y - 7, 22, 13, fabric);
+        rect(dc, x + 6, y + 1, 4, 2, CREAM);
+        break;
     }
-    rect(dc, 424, 119, 43, 16, RGB(135, 99, 69));
-    rect(dc, 424, 118, 43, 10, CREAM);
-    rect(dc, 431, 113, 15, 13, INK);
-    rect(dc, 433, 115, 11, 4, RGB(158, 216, 225));
-    rect(dc, 448, 120, 6, 6, BRASS);
-    if (tick) {
-        unsigned puff = (unsigned)(tick/70 % 15);
-        if (puff < 11) oval(dc, 450 + (int)(puff%3), 117 - (int)puff, 3, 3, CREAM);
-    }
-    if (level >= 2) {
-        plant(dc, 487, 135, RGB(173, 107, 76));
-        plant(dc, 426, 221, BRASS);
-    }
-    if (level >= 3) {
-        rect(dc, 432, 151, 60, 28, RGB(109, 116, 145));
-        rect(dc, 434, 151, 56, 9, RGB(141, 151, 181));
-        rect(dc, 441, 161, 21, 12, RGB(164, 173, 198));
-        rect(dc, 463, 161, 21, 12, RGB(164, 173, 198));
-        rect(dc, 487, 158, 6, 17, INK);
-        oval(dc, 445, 178, 35, 14, SHADOW);
-        oval(dc, 445, 176, 35, 12, CREAM);
-    }
-    if (level == 4) {
-        rect(dc, 466, 200, 30, 25, INK);
-        rect(dc, 468, 202, 26, 17, TEAL);
-        rect(dc, 480, 202, 1, 17, CREAM);
-        rect(dc, 469, 210, 24, 1, CREAM);
-        oval(dc, 475 + (int)(tick/120 % 11), 207, 3, 3, BRASS);
+}
+
+static void lounge(HDC dc, const Sim *s, ULONGLONG tick)
+{
+    int slots = lounge_slots(s);
+    for (int i = 0; i < slots; ++i) {
+        Spot p = amenity_spot(s, i);
+        if (i < s->amenities) {
+            draw_amenity(dc, p, i, tick);
+        } else {
+            rect(dc, p.x - 16, p.y - 7, 32, 16, RGB(150, 182, 170));
+            rect(dc, p.x - 4, p.y, 8, 1, CREAM);
+            rect(dc, p.x, p.y - 3, 1, 7, CREAM);
+        }
     }
 }
 
@@ -247,7 +319,7 @@ static void feedback(HDC dc, const Sim *s, int kind, unsigned age)
         "Welcome aboard!", "Office move complete", "Week complete", "A fresh start"};
     static const Spot rays[] = {{-3,-2},{0,-3},{3,-2},{-4,0},{4,0},{-2,2},{2,2}};
     char msg[56];
-    const char *label = labels[kind];
+    const char *label = kind == AMENITIES && s->amenities ? amenities[s->amenities - 1].name : labels[kind];
     COLORREF accent = BRASS;
     if (kind == SCENE_WEEK) {
         label = msg;
@@ -269,7 +341,7 @@ static void feedback(HDC dc, const Sim *s, int kind, unsigned age)
         int count = kind == FURNITURE || kind == TECH ? s->staff : 1;
         for (int n = 0; n < count; ++n) {
             Spot p = station(s->tier, kind == HIRE ? s->staff - 1 : n);
-            if (kind == AMENITIES) p = (Spot){455, 163};
+            if (kind == AMENITIES && s->amenities) p = amenity_spot(s, s->amenities - 1);
             if (kind == SCENE_WEEK) p = (Spot){264, 143};
             int spread = 3 + (int)age / (kind == SCENE_WEEK ? 28 : 90);
             int size = age < 450 ? 2 : 1;
@@ -299,7 +371,7 @@ void scene_draw(HDC dc, const Sim *s, ULONGLONG tick, bool motion, const SceneCu
     ULONGLONG elapsed = motion && cue ? tick - cue->since : SCENE_CUE_MS;
     int mood = sim_forecast(s).mood;
     room(dc, s, idle);
-    lounge(dc, s->amenities, idle);
+    lounge(dc, s, idle);
     for (int i = 0; i < offices[s->tier].capacity; ++i) {
         Spot p = station(s->tier, i);
         desk(dc, p, s->furniture, i < s->staff, s->tech != 0);

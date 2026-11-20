@@ -27,14 +27,19 @@ static char update[180];
 static const char *save_status = "";
 static SceneCue cue;
 static bool has_cue, motion_enabled, motion_error;
-static const char *const upgrade_details[3][UPGRADE_LIMIT + 1] = {
+static const char *const upgrade_details[2][UPGRADE_LIMIT + 1] = {
     {"Simple desks and chairs", "Walnut desks and storage", "Desk lamps and better seating",
      "Standing desks and ergonomic chairs", "Standing desks and ergonomic chairs installed"},
     {"Laptops for the team", "Dedicated monitors and keyboards", "Dual-monitor workstations",
      "Performance towers", "Performance towers installed"},
-    {"Coffee station", "Plants for the break area", "Sofa and coffee table",
-     "Arcade cabinet", "Arcade cabinet installed"},
 };
+
+static Sim new_game(void)
+{
+    FILETIME now;
+    GetSystemTimeAsFileTime(&now);
+    return sim_new(now.dwHighDateTime ^ now.dwLowDateTime ^ GetCurrentProcessId());
+}
 
 static void box(HDC dc, int x, int y, int w, int h, COLORREF color)
 {
@@ -112,11 +117,16 @@ static void dashboard(HDC dc)
     snprintf(buf, sizeof buf, "%s / week rent", a);
     text(dc, 360, 221, 213, 28, BODY, MUTED, buf, DT_RIGHT);
     floor_plan(dc);
-    text(dc, 42, 520, 200, 25, TINY, MUTED, "TEAM SATISFACTION", DT_LEFT);
+    int cohesion = game.disruption < 100 ? 100 - game.disruption : 0;
+    if (game.disruption)
+        snprintf(buf, sizeof buf, "COHESION %d%%  |  -%d MOOD  |  %d WK TO SETTLE", cohesion, f.mood_loss,
+            (game.disruption + COHESION_RECOVERY - 1)/COHESION_RECOVERY);
+    else lstrcpyA(buf, "COHESION 100%  |  TEAM SETTLED");
+    text(dc, 42, 520, 310, 25, TINY, game.disruption ? RED : MUTED, buf, DT_LEFT);
     snprintf(buf, sizeof buf, "Reputation: +%d%% revenue", 2*game.reputation);
-    text(dc, 281, 520, 292, 25, BODY, MUTED, buf, DT_RIGHT);
+    text(dc, 350, 520, 223, 25, BODY, MUTED, buf, DT_RIGHT);
     box(dc, 42, 548, 531, 9, LINE);
-    box(dc, 42, 548, 531*f.mood/100, 9, f.mood >= 75 ? GREEN : RGB(173, 113, 25));
+    box(dc, 42, 548, 531*cohesion/100, 9, game.disruption ? RGB(173, 113, 25) : GREEN);
     money(a, f.revenue, false);
     money(b, f.costs, false);
     snprintf(buf, sizeof buf, "Weekly forecast: %s revenue  |  %s expenses", a, b);
@@ -124,11 +134,28 @@ static void dashboard(HDC dc)
 
     box(dc, 607, 184, 369, 406, WHITE);
     text(dc, 625, 192, 335, 24, TINY, MUTED, "INVEST IN YOUR OFFICE", DT_LEFT);
-    int levels[] = {game.furniture, game.tech, game.amenities};
-    for (int i = FURNITURE; i <= AMENITIES; ++i)
+    int levels[] = {game.furniture, game.tech};
+    for (int i = FURNITURE; i <= TECH; ++i)
         text(dc, 625, 222 + i*71, 335, 21, BODY, MUTED, upgrade_details[i][levels[i]], DT_LEFT);
-    text(dc, 625, 222 + HIRE*71, 335, 21, BODY, MUTED, "Recruit a colleague for $385/week", DT_LEFT);
-    text(dc, 625, 222 + MOVE*71, 335, 21, BODY, MUTED, "More room for your team to grow", DT_LEFT);
+    if (game.amenities < office->amenity_slots) {
+        const Amenity *next = &amenities[game.amenities];
+        money(a, next->upkeep, false);
+        snprintf(buf, sizeof buf, "%s  |  +%d base mood  |  %s/week", next->name, next->satisfaction, a);
+    } else if (game.amenities > office->amenity_slots) {
+        lstrcpyA(buf, "Previous perks kept; move to add more.");
+    } else if (game.amenities == AMENITY_COUNT) {
+        lstrcpyA(buf, "Your break area has every perk.");
+    } else {
+        lstrcpyA(buf, "Break area full; move to unlock more.");
+    }
+    text(dc, 625, 222 + AMENITIES*71, 335, 21, BODY, MUTED, buf, DT_LEFT);
+    snprintf(buf, sizeof buf, "$385/week payroll  |  -%d to %d cohesion", HIRE_DISRUPTION_MIN, HIRE_DISRUPTION_MAX);
+    text(dc, 625, 222 + HIRE*71, 335, 21, BODY, MUTED, buf, DT_LEFT);
+    if (game.tier + 1 < TIER_COUNT)
+        snprintf(buf, sizeof buf, "%d perk slots  |  -%d to %d cohesion", offices[game.tier + 1].amenity_slots,
+            MOVE_DISRUPTION_MIN, MOVE_DISRUPTION_MAX);
+    else lstrcpyA(buf, "You are in the largest office.");
+    text(dc, 625, 222 + MOVE*71, 335, 21, BODY, MUTED, buf, DT_LEFT);
 
     box(dc, 24, 604, 952, 71, game.closed ? RGB(250, 230, 226) : MINT);
     if (game.closed) lstrcpyA(buf, "Office closed: expenses exceeded available cash.");
@@ -219,7 +246,8 @@ static void refresh(HWND window)
         else snprintf(description, sizeof description, "%s", block ? block : amount);
         if (i <= AMENITIES) {
             int levels[] = {game.furniture, game.tech, game.amenities};
-            snprintf(label, sizeof label, "%s %d/%d\t%s", action_names[i], levels[i], UPGRADE_LIMIT, description);
+            int limit = i == AMENITIES ? offices[game.tier].amenity_slots : UPGRADE_LIMIT;
+            snprintf(label, sizeof label, "%s %d/%d\t%s", action_names[i], levels[i], limit, description);
         } else {
             snprintf(label, sizeof label, "%s\t%s", action_names[i], description);
         }
@@ -275,12 +303,17 @@ static HWND button(HWND window, int id, const char *caption, int x, int y, int w
 static void on_command(HWND window, int id)
 {
     int cue_kind;
+    int before = game.disruption;
     if (id >= FIRST_ACTION && id < FIRST_ACTION + ACTION_COUNT) {
         Action action = id - FIRST_ACTION;
         if (!sim_buy(&game, action)) return;
         cue_kind = action;
-        if (action == MOVE) snprintf(update, sizeof update, "Moved into %s.", offices[game.tier].name);
-        else if (action == HIRE) lstrcpyA(update, "A new colleague joined the team. Check the weekly forecast.");
+        if (action == HIRE || action == MOVE) {
+            const char *event = action == MOVE ? offices[game.tier].name : "New teammate";
+            snprintf(update, sizeof update, "%s added %d disruption. Give the team time to settle.",
+                event, game.disruption - before);
+        } else if (action == AMENITIES)
+            snprintf(update, sizeof update, "%s installed in the break area.", amenities[game.amenities - 1].name);
         else lstrcpyA(update, "Upgrade installed. Check its effect on team satisfaction and profit.");
     } else if (id == NEXT_WEEK) {
         int finished = game.week;
@@ -292,13 +325,17 @@ static void on_command(HWND window, int id)
         char amount[32];
         cue_kind = SCENE_WEEK;
         money(amount, game.last_net, true);
-        snprintf(update, sizeof update, "Week %d closed at %s. %s", finished, amount,
-            game.closed ? "Start a new game to try again." :
-            game.reputation ? "Reputation helps attract more work." : "Aim for 75%+ satisfaction to build reputation.");
+        if (game.disruption < before)
+            snprintf(update, sizeof update, "Week %d closed at %s. Disruption fell by %d points%s",
+                finished, amount, before - game.disruption, game.disruption ? "." : "; the team is settled.");
+        else
+            snprintf(update, sizeof update, "Week %d closed at %s. %s", finished, amount,
+                game.closed ? "Start a new game to try again." :
+                game.reputation ? "Reputation helps attract more work." : "Aim for 75%+ satisfaction to build reputation.");
     } else if (id == NEW_GAME) {
         if (MessageBoxA(window, "Replace your current office and its autosave?", "Start a new game",
             MB_YESNO | MB_ICONQUESTION | MB_DEFBUTTON2) != IDYES) return;
-        game = sim_new();
+        game = new_game();
         cue_kind = SCENE_NEW;
         lstrcpyA(update, "Start with an upgrade or finish the week to earn more cash.");
     } else return;
@@ -379,7 +416,7 @@ int WINAPI WinMain(HINSTANCE instance, HINSTANCE previous, LPSTR cmd, int show)
         if (singleton) CloseHandle(singleton);
         return 1;
     }
-    game = sim_new();
+    game = new_game();
     switch (load_game(&game)) {
     case SAVE_OK: lstrcpyA(update, "Welcome back. Your office has been restored."); break;
     case SAVE_INVALID:

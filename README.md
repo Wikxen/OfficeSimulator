@@ -18,10 +18,22 @@ Office, Team Loft, and Headquarters. Win by keeping a full Headquarters
 profitable with at least 85% satisfaction for three consecutive weeks. You can
 keep playing after winning.
 
+Hiring adds **6–10 disruption points**, and a move adds **18–24**. Those
+penalties stack if you expand quickly: each point takes one point off
+satisfaction, down to zero. Completing a week removes **3 disruption points**
+after that week's results are calculated. The cohesion meter shows your current
+penalty and the weeks left until the team settles if you make no further changes.
+
+The Starter Suite has **1 amenity slot**, the Studio Office has **4**, the Team
+Loft has **7**, and Headquarters has **10**. Each perk costs money to install and
+maintain. You keep your perks when you move, and older saves keep any perks that
+were already installed above the new capacity.
+
 Every upgrade changes the office: desks gain storage and lamps, laptops give
-way to dual monitors, and the empty break area grows into a lounge with an
-arcade cabinet. Watch your team work between turns and look for short
-animations when you invest, hire, move, or finish a week. The game follows the
+way to dual monitors, and the break area can grow from a coffee station into
+a lounge with an arcade cabinet, a library, and more. Watch your team work
+between turns and look for short animations when you invest, hire, move, or
+finish a week. The game follows the
 Windows **Animation effects** setting; turning it off keeps the office still
 without changing gameplay.
 

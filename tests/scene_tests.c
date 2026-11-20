@@ -42,13 +42,14 @@ int main(void)
     assert(old && old != HGDI_ERROR);
     assert(SetViewportOrgEx(dc, 1 - SCENE_X, 1 - SCENE_Y, NULL));
 
-    Sim s = sim_new();
+    Sim s = sim_new(1);
     int *levels[] = {&s.furniture, &s.tech, &s.amenities};
     for (int tier = 0; tier < TIER_COUNT; ++tier) {
         s.tier = tier;
         s.staff = offices[tier].capacity - 1;
         for (int i = 0; i < 3; ++i) {
-            for (int j = 0; j < UPGRADE_LIMIT; ++j) {
+            int limit = i == AMENITIES ? offices[tier].amenity_slots : UPGRADE_LIMIT;
+            for (int j = 0; j < limit; ++j) {
                 render(first, &s, 900, false, NULL);
                 ++*levels[i];
                 render(second, &s, 900, false, NULL);
@@ -63,7 +64,7 @@ int main(void)
     }
 
     for (int tier = 1; tier < TIER_COUNT; ++tier) {
-        s = sim_new();
+        s = sim_new(1);
         s.tier = tier - 1;
         render(first, &s, 0, false, NULL);
         ++s.tier;
@@ -72,7 +73,8 @@ int main(void)
     }
 
     s.staff = offices[s.tier].capacity;
-    s.furniture = s.tech = s.amenities = UPGRADE_LIMIT;
+    s.furniture = s.tech = UPGRADE_LIMIT;
+    s.amenities = AMENITY_COUNT;
     render(first, &s, 1000, true, NULL);
     render(second, &s, 1320, true, NULL);
     assert(memcmp(first, second, sizeof first) != 0);
